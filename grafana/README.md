@@ -2,9 +2,13 @@
 
 This directory contains the production Grafana Cloud dashboard for the M5Stack Core2 AWS vibration monitoring system.
 
-## Dashboard File
+## Dashboard Files
 
-**`core2_iot_vibration_dashboard.yaml`** - Complete working dashboard with all panels configured and tested.
+**`core2_iot_vibration_dashboard.yaml`** - Dashboard in YAML format (recommended for Grafana Cloud)
+
+**`core2_iot_vibration_dashboard.json`** - Dashboard in JSON format (alternative format)
+
+Both files contain the same dashboard with all panels configured and tested. Use whichever format works best with your Grafana version.
 
 ## What's Included
 
@@ -89,9 +93,11 @@ WHERE device_id = '012333B76CAC4C3701'
 1. **Login to Grafana Cloud**
 2. Go to **Dashboards** → **New** → **Import**
 3. Click **Upload JSON/YAML file**
-4. Select `core2_iot_vibration_dashboard.yaml`
+4. Select `core2_iot_vibration_dashboard.yaml` (or `.json`)
 5. **Select Timestream data source** from dropdown
 6. Click **Import**
+
+**Note:** Both YAML and JSON formats work - use whichever Grafana accepts.
 
 ### Method 2: Via Grafana API (Advanced)
 

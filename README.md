@@ -423,7 +423,8 @@ grafana-core2aws-iot/
 │   ├── registration_helper.py  # Advanced registration (experimental)
 │   └── timestream_writer.py    # Lambda function (not used - using IoT Rule)
 ├── grafana/                # Grafana Cloud dashboard
-│   ├── core2_iot_vibration_dashboard.yaml  # Production dashboard (import-ready)
+│   ├── core2_iot_vibration_dashboard.yaml  # Production dashboard YAML format
+│   ├── core2_iot_vibration_dashboard.json  # Production dashboard JSON format
 │   └── README.md           # Dashboard documentation and setup guide
 └── .gitignore
 ```
