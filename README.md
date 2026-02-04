@@ -38,9 +38,9 @@ This is the same security model used in hardware security keys (YubiKey, etc.) a
 ## This Device
 
 - **Device ID / Thing Name:** `012333B76CAC4C3701`
-- **Certificate fingerprint:** `1fba4d6eaddca81af1f391d7ebc71322a88e06d0`
-- **AWS Region:** `us-west-2`
-- **IoT Endpoint:** `a2zey9c7ts6fdf-ats.iot.us-west-2.amazonaws.com`
+- **Certificate fingerprint:** `699ea81f9eb0f227f655b3b2ab03157a50677f16`
+- **AWS Region:** `us-east-1`
+- **IoT Endpoint:** `afujw4lyol38p-ats.iot.us-east-1.amazonaws.com`
 
 ---
 
@@ -73,9 +73,9 @@ Edit `src/secrets.h` with:
 cd /path/to/grafana-core2aws-iot
 
 aws iot register-certificate-without-ca \
-  --certificate-pem file://device.pem \
+  --certificate-pem file://extras/certificates/device_new.pem \
   --status ACTIVE \
-  --region us-west-2
+  --region us-east-1
 ```
 
 Save the `certificateArn` from the output - you'll need it for the next steps.
@@ -93,7 +93,7 @@ Example output:
 ```bash
 aws iot create-thing \
   --thing-name "012333B76CAC4C3701" \
-  --region us-west-2
+  --region us-east-1
 ```
 
 #### 3c. Create the IoT Policy
@@ -101,19 +101,19 @@ aws iot create-thing \
 ```bash
 aws iot create-policy \
   --policy-name "VibrationMonitorPolicy" \
-  --region us-west-2 \
+  --region us-east-1 \
   --policy-document '{
     "Version": "2012-10-17",
     "Statement": [
       {
         "Effect": "Allow",
         "Action": "iot:Connect",
-        "Resource": "arn:aws:iot:us-west-2:*:client/${iot:Connection.Thing.ThingName}"
+        "Resource": "arn:aws:iot:us-east-1:*:client/${iot:Connection.Thing.ThingName}"
       },
       {
         "Effect": "Allow",
         "Action": "iot:Publish",
-        "Resource": "arn:aws:iot:us-west-2:*:topic/dt/vibration/${iot:Connection.Thing.ThingName}/*"
+        "Resource": "arn:aws:iot:us-east-1:*:topic/dt/vibration/${iot:Connection.Thing.ThingName}/*"
       }
     ]
   }'
@@ -123,17 +123,17 @@ aws iot create-policy \
 
 ```bash
 # Replace <CERT_ARN> with the certificateArn from step 3a
-CERT_ARN="arn:aws:iot:us-west-2:123456789012:cert/abc123..."
+CERT_ARN="arn:aws:iot:us-east-1:123456789012:cert/abc123..."
 
 aws iot attach-policy \
   --policy-name "VibrationMonitorPolicy" \
   --target "$CERT_ARN" \
-  --region us-west-2
+  --region us-east-1
 
 aws iot attach-thing-principal \
   --thing-name "012333B76CAC4C3701" \
   --principal "$CERT_ARN" \
-  --region us-west-2
+  --region us-east-1
 ```
 
 ### 4. Build and Flash Firmware
@@ -167,14 +167,14 @@ In AWS Console:
 ```bash
 aws timestream-write create-database \
   --database-name VibrationDB \
-  --region us-west-2
+  --region us-east-1
 
 aws timestream-write create-table \
   --database-name VibrationDB \
   --table-name Telemetry \
   --retention-properties \
     MemoryStoreRetentionPeriodInHours=24,MagneticStoreRetentionPeriodInDays=90 \
-  --region us-west-2
+  --region us-east-1
 ```
 
 ### Create IAM Role for IoT Rule
@@ -226,7 +226,7 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 aws iot create-topic-rule \
   --rule-name VibrationToTimestream \
-  --region us-west-2 \
+  --region us-east-1 \
   --topic-rule-payload '{
     "sql": "SELECT vibration.rms_g as rms_g, vibration.peak_g as peak_g, health.battery_v as battery_v, health.temp_c as temp_c, health.rssi_dbm as rssi_dbm, health.uptime_sec as uptime_sec, health.free_heap as free_heap FROM '\''dt/vibration/+/telemetry'\''",
     "actions": [{
@@ -261,7 +261,7 @@ In Grafana Cloud:
    - **Authentication Provider:** Access & secret key (or use IAM role if in AWS)
    - **Access Key ID:** Your AWS access key
    - **Secret Access Key:** Your AWS secret key
-   - **Default Region:** us-west-2
+   - **Default Region:** us-east-1
    - **Default Database:** VibrationDB
    - **Default Table:** Telemetry
 
@@ -359,7 +359,8 @@ Published to `dt/vibration/{device_id}/telemetry` every 5 seconds:
 ```
 grafana-core2aws-iot/
 ├── platformio.ini          # Build configuration
-├── src/
+├── README.md               # This file
+├── src/                    # Main firmware source
 │   ├── main.cpp            # Entry point, setup/loop
 │   ├── secrets.h           # WiFi/AWS credentials (git-ignored)
 │   ├── secrets.h.example   # Template for secrets
@@ -368,28 +369,41 @@ grafana-core2aws-iot/
 │   ├── aws_iot.cpp/h       # ATECC608 + BearSSL + MQTT
 │   ├── imu_sampler.cpp/h   # 500Hz IMU sampling (FreeRTOS task)
 │   ├── telemetry.cpp/h     # JSON payload builder
-│   └── display_ui.cpp/h    # LovyanGFX status display
-├── extras/
-│   └── extract_cert/       # Certificate extraction sketch
-├── device.pem              # Device certificate for AWS registration
-└── README.md               # This file
+│   └── display_ui.cpp/h    # LovyanGFX vibration gauge display
+├── docs/                   # Documentation
+│   ├── CLAUDE.md           # Project context for Claude Code
+│   ├── ATECC608_ARCHITECTURE.md      # Secure element deep dive
+│   ├── ATECC608_CERTIFICATE_SOLUTION.md  # Certificate troubleshooting
+│   └── VIBRATION_DETECTION.md        # RMS and FreeRTOS explanation
+├── extras/                 # Additional tools
+│   ├── extract_cert/       # Certificate extraction sketch
+│   ├── generate_cert/      # Certificate generator sketch
+│   └── certificates/       # Device certificates
+│       └── device_new.pem  # Working certificate for AWS
+├── aws/                    # AWS helper scripts
+│   ├── register_cert.py    # Certificate registration script
+│   ├── registration_helper.py  # Advanced registration (experimental)
+│   └── timestream_writer.py    # Lambda function (not used - using IoT Rule)
+└── .gitignore
 ```
 
 ---
 
-## Extracting Certificate (New Device)
+## Generating Certificate (New Device)
 
-If setting up a different Core2 AWS device:
+If setting up a different Core2 AWS device, generate a properly formatted certificate:
 
 ```bash
-cd extras/extract_cert
+cd extras/generate_cert
 pio run -t upload --upload-port COMx
 pio device monitor --port COMx --baud 115200
 ```
 
-Copy the PEM certificate from serial output into:
-1. `src/secrets.h` (DEVICE_CERTIFICATE)
-2. `device.pem` (for AWS CLI registration)
+Copy the PEM certificate from serial output and save to `extras/certificates/device_new.pem`, then:
+1. Register with AWS IoT (step 3a above)
+2. Update `src/secrets.h` with the DEVICE_CERTIFICATE
+
+**Note:** The private key never leaves the ATECC608 chip. See [docs/ATECC608_CERTIFICATE_SOLUTION.md](docs/ATECC608_CERTIFICATE_SOLUTION.md) for details.
 
 ---
 
