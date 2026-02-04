@@ -11,6 +11,15 @@ static VibrationMetrics currentMetrics = {0, 0, 0, 0, false};
 static uint32_t lastPublishTime = 0;
 static uint32_t publishCount = 0;
 
+// Sprite for needle (Lovyan technique - small sprite, rotate it!)
+static LGFX_Sprite needle(&M5.Lcd);
+
+// Gauge parameters
+static const int GAUGE_CENTER_X = 160;
+static const int GAUGE_CENTER_Y = 150;
+static const int GAUGE_RADIUS = 90;
+static float lastAngle = 180.0f;  // Track last needle position
+
 // Colors
 #define COLOR_BG        TFT_BLACK
 #define COLOR_HEADER    TFT_CYAN
@@ -24,6 +33,16 @@ void displayInit() {
     M5.Lcd.fillScreen(COLOR_BG);
     M5.Lcd.setTextColor(COLOR_TEXT, COLOR_BG);
     M5.Lcd.setTextDatum(TL_DATUM);
+
+    // Create tiny sprite for needle (Lovyan technique!)
+    needle.setColorDepth(16);
+    needle.createSprite(4, GAUGE_RADIUS - 25);
+    needle.setPivot(2, GAUGE_RADIUS - 25);  // Pivot at bottom center
+
+    // Draw needle shape on sprite
+    needle.fillSprite(TFT_TRANSPARENT);
+    needle.fillRect(0, 0, 4, needle.height(), TFT_WHITE);
+    needle.fillCircle(2, 0, 3, TFT_WHITE);
 }
 
 void displaySetWiFiStatus(bool connected) {
@@ -39,21 +58,18 @@ void displaySetMetrics(const VibrationMetrics& metrics) {
 }
 
 static void drawStatusBar() {
-    // WiFi status
-    M5.Lcd.setTextColor(wifiConnected ? COLOR_OK : COLOR_ERROR, COLOR_BG);
-    M5.Lcd.drawString(wifiConnected ? "WiFi:OK " : "WiFi:-- ", 10, 50);
+    // Simple status indicators at bottom
+    M5.Lcd.setFont(&fonts::FreeSans9pt7b);
 
-    // AWS status
-    M5.Lcd.setTextColor(awsConnected ? COLOR_OK : COLOR_ERROR, COLOR_BG);
-    M5.Lcd.drawString(awsConnected ? "AWS:OK" : "AWS:--", 120, 50);
+    // WiFi indicator
+    M5.Lcd.fillCircle(20, 225, 6, wifiConnected ? COLOR_OK : COLOR_ERROR);
+    M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
+    M5.Lcd.drawString("WiFi", 30, 220);
 
-    // RSSI if connected
-    if (wifiConnected) {
-        M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
-        char rssi[16];
-        snprintf(rssi, sizeof(rssi), "%ddBm", WiFi.RSSI());
-        M5.Lcd.drawString(rssi, 220, 50);
-    }
+    // AWS indicator - moved 80 pixels right
+    M5.Lcd.fillCircle(130, 225, 6, awsConnected ? COLOR_OK : COLOR_ERROR);
+    M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
+    M5.Lcd.drawString("AWS", 140, 220);
 }
 
 static uint16_t getRMSColor(float rms) {
@@ -70,84 +86,106 @@ static uint16_t getPeakColor(float peak) {
     return COLOR_ERROR;
 }
 
+static void drawGaugeBackground() {
+    // Draw static gauge background (only once!)
+    const float maxG = 3.0f;
+
+    // Title at very top, centered
+    M5.Lcd.setFont(&fonts::FreeSansBold12pt7b);
+    M5.Lcd.setTextColor(COLOR_HEADER, COLOR_BG);
+    M5.Lcd.setTextDatum(TC_DATUM);
+    M5.Lcd.drawString("VIBRATION RMS", 160, 5);
+    M5.Lcd.setTextDatum(TL_DATUM);
+
+    // Draw thick gauge background arcs
+    for (int i = 0; i < 15; i++) {
+        M5.Lcd.drawArc(GAUGE_CENTER_X, GAUGE_CENTER_Y, GAUGE_RADIUS-i, GAUGE_RADIUS-i-1, 180, 240, COLOR_OK);
+        M5.Lcd.drawArc(GAUGE_CENTER_X, GAUGE_CENTER_Y, GAUGE_RADIUS-i, GAUGE_RADIUS-i-1, 240, 300, COLOR_WARN);
+        M5.Lcd.drawArc(GAUGE_CENTER_X, GAUGE_CENTER_Y, GAUGE_RADIUS-i, GAUGE_RADIUS-i-1, 300, 360, COLOR_ERROR);
+    }
+
+    // Draw scale markings
+    for (int i = 0; i <= 12; i++) {
+        float angle = 180 + (i * 15);
+        float rad = angle * PI / 180.0;
+        int x1 = GAUGE_CENTER_X + (GAUGE_RADIUS - 16) * cos(rad);
+        int y1 = GAUGE_CENTER_Y + (GAUGE_RADIUS - 16) * sin(rad);
+        int x2 = GAUGE_CENTER_X + (GAUGE_RADIUS - 25) * cos(rad);
+        int y2 = GAUGE_CENTER_Y + (GAUGE_RADIUS - 25) * sin(rad);
+        M5.Lcd.drawLine(x1, y1, x2, y2, TFT_WHITE);
+    }
+
+    // Draw scale numbers (adjusted positions)
+    M5.Lcd.setFont(&fonts::FreeSansBold12pt7b);
+    M5.Lcd.setTextColor(COLOR_TEXT, COLOR_BG);
+    M5.Lcd.drawString("0", GAUGE_CENTER_X - 95, GAUGE_CENTER_Y + 10);
+    M5.Lcd.drawString("1", GAUGE_CENTER_X - 80, GAUGE_CENTER_Y - 50);  // Adjusted: left 5px, down 5px
+    M5.Lcd.drawString("2", GAUGE_CENTER_X - 8, GAUGE_CENTER_Y - 90);   // Moved up 10px
+    M5.Lcd.drawString("3", GAUGE_CENTER_X + 65, GAUGE_CENTER_Y - 55);
+}
+
+static void drawVibrationGauge() {
+    const float maxG = 3.0f;
+
+    // Erase old needle area - clear full needle length (65px) + tip radius
+    M5.Lcd.fillCircle(GAUGE_CENTER_X, GAUGE_CENTER_Y, 70, COLOR_BG);
+
+    if (currentMetrics.valid) {
+        float rms = constrain(currentMetrics.rms_g, 0, maxG);
+        float angle = 180 + (rms / maxG) * 180;  // 180° to 360°
+
+        uint16_t needleColor = getRMSColor(rms);
+
+        // Set pivot and draw rotated needle (Lovyan technique!)
+        M5.Lcd.setPivot(GAUGE_CENTER_X, GAUGE_CENTER_Y);
+        needle.setPaletteColor(1, needleColor);
+        // Fine-tuned: +90° for sprite alignment, -30° to point at correct value
+        needle.pushRotated(angle + 60);
+
+        lastAngle = angle;
+
+        // Center hub
+        M5.Lcd.fillCircle(GAUGE_CENTER_X, GAUGE_CENTER_Y, 6, needleColor);
+
+        // Value in center
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.2f", currentMetrics.rms_g);
+        M5.Lcd.setFont(&fonts::FreeSansBold18pt7b);
+        M5.Lcd.setTextColor(needleColor, COLOR_BG);
+        M5.Lcd.drawString(buf, GAUGE_CENTER_X - 40, GAUGE_CENTER_Y + 20);
+
+        M5.Lcd.setFont(&fonts::FreeSansBold12pt7b);
+        M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
+        M5.Lcd.drawString("g", GAUGE_CENTER_X + 35, GAUGE_CENTER_Y + 30);
+    } else {
+        M5.Lcd.setFont(&fonts::FreeSansBold18pt7b);
+        M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
+        M5.Lcd.drawString("--", GAUGE_CENTER_X - 25, GAUGE_CENTER_Y + 20);
+    }
+}
+
 static void drawVibrationMetrics() {
-    char buf[64];
-
-    // RMS acceleration
-    M5.Lcd.setTextColor(COLOR_TEXT, COLOR_BG);
-    M5.Lcd.drawString("RMS:", 10, 100);
-
-    if (currentMetrics.valid) {
-        snprintf(buf, sizeof(buf), "%.3f g  ", currentMetrics.rms_g);
-        M5.Lcd.setTextColor(getRMSColor(currentMetrics.rms_g), COLOR_BG);
-    } else {
-        snprintf(buf, sizeof(buf), "---     ");
-        M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
-    }
-    M5.Lcd.drawString(buf, 80, 100);
-
-    // Peak acceleration
-    M5.Lcd.setTextColor(COLOR_TEXT, COLOR_BG);
-    M5.Lcd.drawString("Peak:", 10, 130);
-
-    if (currentMetrics.valid) {
-        snprintf(buf, sizeof(buf), "%.3f g  ", currentMetrics.peak_g);
-        M5.Lcd.setTextColor(getPeakColor(currentMetrics.peak_g), COLOR_BG);
-    } else {
-        snprintf(buf, sizeof(buf), "---     ");
-        M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
-    }
-    M5.Lcd.drawString(buf, 80, 130);
+    drawVibrationGauge();
 }
 
 static void drawDeviceInfo() {
-    char buf[64];
+    // Keep it minimal - just battery
+    char buf[16];
+    M5.Lcd.setFont(&fonts::FreeSans9pt7b);
     M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
 
-    // Battery voltage
     float batteryV = M5.Power.getBatteryVoltage() / 1000.0f;
-    snprintf(buf, sizeof(buf), "Batt: %.2fV", batteryV);
-    M5.Lcd.drawString(buf, 10, 180);
-
-    // Temperature from AXP192
-    float temp = M5.Power.Axp192.getInternalTemperature();
-    snprintf(buf, sizeof(buf), "Temp: %.1fC", temp);
-    M5.Lcd.drawString(buf, 140, 180);
-
-    // Uptime
-    uint32_t uptimeSec = millis() / 1000;
-    uint32_t hours = uptimeSec / 3600;
-    uint32_t mins = (uptimeSec % 3600) / 60;
-    uint32_t secs = uptimeSec % 60;
-    snprintf(buf, sizeof(buf), "Up: %02lu:%02lu:%02lu", hours, mins, secs);
-    M5.Lcd.drawString(buf, 10, 205);
-
-    // Free heap
-    snprintf(buf, sizeof(buf), "Heap: %luK", ESP.getFreeHeap() / 1024);
-    M5.Lcd.drawString(buf, 140, 205);
+    snprintf(buf, sizeof(buf), "%.1fV", batteryV);
+    M5.Lcd.drawString(buf, 270, 220);
 }
 
 void displayDrawStatusScreen() {
-    M5.Lcd.fillScreen(COLOR_BG);
+    // Draw static gauge background once
+    drawGaugeBackground();
 
-    // Header
-    M5.Lcd.setTextColor(COLOR_HEADER, COLOR_BG);
-    M5.Lcd.setTextSize(1);
-    M5.Lcd.setFont(&fonts::FreeSansBold12pt7b);
-    M5.Lcd.drawString("Vibration Monitor", 10, 10);
-
-    // Reset font for rest of display
-    M5.Lcd.setFont(&fonts::FreeSans9pt7b);
-
-    // Device ID
-    M5.Lcd.setTextColor(COLOR_DIM, COLOR_BG);
-    String deviceId = awsGetDeviceId();
-    if (deviceId.length() > 0) {
-        M5.Lcd.drawString(deviceId.c_str(), 220, 15);
-    }
-
-    drawStatusBar();
+    // Draw dynamic parts
     drawVibrationMetrics();
+    drawStatusBar();
     drawDeviceInfo();
 }
 
@@ -162,8 +200,8 @@ void displayUpdate() {
         displaySetMetrics(metrics);
     }
 
-    // Redraw screen
-    drawStatusBar();
+    // Redraw only dynamic parts (needle rotates via pushRotated)
     drawVibrationMetrics();
+    drawStatusBar();
     drawDeviceInfo();
 }
