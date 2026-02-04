@@ -422,6 +422,9 @@ grafana-core2aws-iot/
 │   ├── register_cert.py    # Certificate registration script
 │   ├── registration_helper.py  # Advanced registration (experimental)
 │   └── timestream_writer.py    # Lambda function (not used - using IoT Rule)
+├── grafana/                # Grafana Cloud dashboard
+│   ├── core2_iot_vibration_dashboard.yaml  # Production dashboard (import-ready)
+│   └── README.md           # Dashboard documentation and setup guide
 └── .gitignore
 ```
 
