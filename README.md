@@ -6,16 +6,54 @@ Industrial vibration monitoring demo: M5Stack Core2 AWS samples IMU data, comput
 
 ## Architecture
 
+```mermaid
+graph LR
+    subgraph Device["M5Stack Core2 AWS"]
+        IMU[MPU6886 IMU<br/>500Hz Sampling]
+        PMU[AXP192 PMU<br/>Battery Management]
+        SE[ATECC608<br/>Secure Element]
+        CPU[ESP32 Dual-Core<br/>FreeRTOS]
+
+        IMU -->|Raw Accel Data| CPU
+        PMU -->|Health Metrics| CPU
+        SE -->|TLS Signing| CPU
+    end
+
+    subgraph AWS["Amazon Web Services"]
+        IoT[AWS IoT Core<br/>MQTT Broker]
+        Rule[IoT Rule<br/>SQL Transform]
+        TS[(Amazon Timestream<br/>Time-Series DB)]
+
+        IoT -->|MQTT Message| Rule
+        Rule -->|Write Records| TS
+    end
+
+    subgraph Grafana["Grafana Cloud"]
+        DS[Timestream<br/>Data Source]
+        Dashboard[Dashboard<br/>Visualizations]
+
+        DS -->|Query| Dashboard
+    end
+
+    CPU ==>|MQTTS:8883<br/>TLS 1.2| IoT
+    TS -.->|Timestream API| DS
+
+    style Device fill:#e1f5ff
+    style AWS fill:#ff9900,color:#000
+    style Grafana fill:#f05a28,color:#fff
+    style SE fill:#90EE90
+    style IMU fill:#FFE4B5
+    style TS fill:#4B0082,color:#fff
 ```
-[Core2 AWS]                     [AWS]                          [Grafana]
-     |                            |                                |
-  MPU6886 IMU --+            IoT Core                        Cloud account
-  AXP192 PMU --+-- ESP32         |                                |
-  ATECC608 ----+     |       IoT Rule --> Timestream              |
-                     |           |              |                  |
-                MQTTS:8883 ------+              +---- Timestream --+
-                                                     data source
-```
+
+### Data Flow
+
+1. **MPU6886 IMU** samples 3-axis acceleration at 500Hz (FreeRTOS task on Core 1)
+2. **ESP32** computes RMS and peak values over 1-second windows
+3. **ATECC608** signs TLS handshake (private key never leaves chip)
+4. **AWS IoT Core** receives JSON telemetry every 5 seconds via MQTTS
+5. **IoT Rule** transforms and routes data to Timestream
+6. **Grafana** queries Timestream and visualizes trends
 
 ## Security Model
 
